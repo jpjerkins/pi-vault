@@ -75,7 +75,7 @@ On-demand secret decryption system for Raspberry Pi using YubiKey authentication
 - Primary (daily use, keep with you)
 - Backup (emergency use, store in safe)
 
-**Both must have the SAME TOTP seed** to work interchangeably.
+**Both must be programmed with the SAME HMAC-SHA1 secret** (slot 2) so either key derives the same encryption key.
 
 **Quick setup:**
 
@@ -83,34 +83,27 @@ On-demand secret decryption system for Raspberry Pi using YubiKey authentication
 # Verify ykman is installed
 ykman --version
 
-# Program PRIMARY YubiKey
-ykman oath accounts add "Pi5 Vault"
-# Save the seed shown - you'll need it for backup!
+# Generate a random 20-byte HMAC secret
+# Run this once and SAVE THE OUTPUT — you need it to program the backup key
+$secret = -join ((1..20) | ForEach-Object { '{0:x2}' -f (Get-Random -Maximum 256) })
+Write-Host "HMAC secret: $secret"
+# Example output: a3f7c21b9e4d82056f1370abc8de945601f2...
 
-# Remove primary, insert BACKUP YubiKey
-ykman oath accounts add "Pi5 Vault" <same-seed-as-primary>
+# Program PRIMARY YubiKey slot 2 with HMAC-SHA1 challenge-response
+ykman otp chalresp 2 $secret
 
-# Verify both work
-ykman oath accounts code "Pi5 Vault"
+# Remove primary, insert BACKUP YubiKey — use THE SAME secret
+ykman otp chalresp 2 $secret
+
+# Verify both keys produce the same output (test with fixed challenge)
+ykman otp calculate 2 7069352d7661756c74
+# Both keys must return the same hex string
 ```
 
-**⚠️ CRITICAL:** Store backup YubiKey in safe. If both are lost, you're locked out!
-
-**Optional: Google Authenticator (Disaster Recovery Only)**
-
-```powershell
-# OPTIONAL: Add TOTP seed to phone for disaster recovery
-ykman oath accounts uri "Pi5 Vault"
-# Scan QR code with Google Authenticator app
-
-# ⚠️ IMPORTANT: Google Authenticator is ONLY for:
-#   - Programming new YubiKeys if both are lost
-#   - NOT for daily vault access
-#   - NOT for accessing vault from phone
-#   - Stays on your phone, never on pi5
-```
-
-**Security note:** Google Authenticator is optional. Skip it if you want maximum security. The TOTP seed never goes on pi5 - only on YubiKeys (in your possession) and optionally on your phone.
+**⚠️ CRITICAL:**
+- Store the HMAC secret in a printed recovery document, kept in a physical safe
+- Store backup YubiKey in a physical safe
+- If both keys are lost AND you have no recovery document, you are locked out
 
 **For detailed step-by-step instructions with verification and recovery setup, see:**
 - Full design doc (linked in CLAUDE.md) → "Initialization" section
@@ -311,16 +304,16 @@ Setup each laptop once:
 
 ## Backup YubiKey
 
-Both YubiKeys are programmed with the same TOTP seed, so they generate identical codes and derive identical session keys.
+Both YubiKeys are programmed with the same HMAC-SHA1 secret in slot 2, so they produce identical challenge-response output and derive identical session keys.
 
 **If primary YubiKey is lost:**
 1. Get backup YubiKey from safe
-2. Use it exactly like the primary
-3. Optional: Buy new YubiKey and program with same seed
+2. Use it exactly like the primary — it derives the same key
+3. Buy a new YubiKey and program it with the HMAC secret from your recovery document
 
 **Backup YubiKey storage:**
 - Keep in physical safe
-- Store with recovery passphrase
+- Store printed recovery document (with HMAC secret) alongside it
 - Only needed if primary is lost/damaged
 
 ## Security
@@ -333,21 +326,20 @@ Both YubiKeys are programmed with the same TOTP seed, so they generate identical
 - ✅ Audit log
 
 **What's NOT on pi5:**
-- ❌ TOTP seed (never stored anywhere on pi5)
+- ❌ HMAC secret (never stored anywhere on pi5)
 - ❌ YubiKey secrets
 - ❌ Master password
 - ❌ Way to derive session keys without YubiKey
 
 **This is critical:** A root attacker on pi5 cannot derive new session keys after the 30-minute cache expires. They would need physical access to your YubiKey + laptop + SSH tunnel.
 
-### Where TOTP Seed Exists
+### Where the HMAC Secret Exists
 
-**The TOTP seed is the master secret. It exists ONLY in your possession:**
+**The HMAC secret is programmed into both YubiKeys and exists ONLY in your possession:**
 
 1. ✅ Primary YubiKey (on your keychain/laptop)
 2. ✅ Backup YubiKey (in your safe)
-3. ✅ Optional: Google Authenticator (on your phone - disaster recovery only)
-4. ✅ Optional: Printed recovery document (in your safe)
+3. ✅ Printed recovery document (in your safe — needed to reprogram new keys if both are lost)
 
 **NEVER:**
 - ❌ On pi5 (no files, no config, nowhere)
@@ -357,19 +349,18 @@ Both YubiKeys are programmed with the same TOTP seed, so they generate identical
 
 ### Encryption
 - **Algorithm:** AES-256-GCM (authenticated encryption)
-- **Key Derivation:** SHA256(TOTP_from_YubiKey + time_window)
+- **Key Derivation:** SHA256(HMAC-SHA1(YubiKey_slot2, fixed_challenge)) — stable across sessions
 - **Session Keys:** Derived on laptop, cached on pi5 for 30min, auto-expire
 - **File Permissions:** 0600 (owner read/write only)
 
 ### Threat Model
 
 ✅ **Protected Against:**
-- Disk/backup theft (secrets encrypted, need YubiKey TOTP)
+- Disk/backup theft (secrets encrypted, need YubiKey HMAC-SHA1)
 - Physical pi5 access (need YubiKey + laptop + SSH tunnel)
-- Root access on pi5 (no TOTP seed = can't derive keys after cache expires)
-- Offline brute force (TOTP changes every 30 sec)
-- Stolen laptop alone (YubiKey can be removed)
-- Stolen phone alone (need laptop + SSH access)
+- Root access on pi5 (no HMAC secret on pi5 = can't derive keys after cache expires)
+- Stolen laptop alone (YubiKey must be plugged in)
+- Remote attacker (no path to derive key without physical YubiKey)
 
 ⚠️ **Partial Protection:**
 - Root access on pi5 + within 30min window (cached session key might be fresh)
@@ -379,44 +370,6 @@ Both YubiKeys are programmed with the same TOTP seed, so they generate identical
 ❌ **Not Protected Against:**
 - Attacker with: YubiKey + laptop access + SSH credentials (all three)
 - Sophisticated real-time memory monitoring during secret access
-
-### Google Authenticator Security FAQ
-
-**Q: If I add TOTP seed to Google Authenticator, doesn't that weaken security?**
-
-A: Slightly, but it doesn't compromise the pi5 security model. Here's why:
-
-**What Google Auth is for:**
-- ✅ Programming new YubiKeys if both are lost (disaster recovery)
-- ❌ NOT for accessing vault from phone
-- ❌ NOT on pi5 (stays on your phone)
-
-**Attack scenario - Stolen phone:**
-```
-Attacker has: Your phone with Google Auth
-Attacker needs to also compromise:
-  1. SSH access to pi5 (your SSH key or password)
-  2. Your laptop (to run auth proxy)
-  3. Active SSH tunnel
-
-Without all three, TOTP seed alone is useless
-```
-
-**Attack scenario - Root on pi5:**
-```
-Attacker has: Root access on pi5
-Can find: Encrypted secrets, maybe cached session key
-Cannot find: TOTP seed (not on pi5, only on your devices)
-Cannot do: Derive new session keys after 30min expires
-
-Google Auth doesn't change this - TOTP seed still not on pi5
-```
-
-**Recommendation:**
-- Use Google Auth if: You want disaster recovery + have strong phone security
-- Skip Google Auth if: You want absolute maximum security
-
-**Remember:** Google Auth is optional. The system is secure with or without it because the TOTP seed never goes on pi5.
 
 ### Best Practices
 
@@ -449,15 +402,18 @@ Google Auth doesn't change this - TOTP seed still not on pi5
 **Check:**
 - Is YubiKey plugged into laptop?
 - Does `ykman --version` work?
-- Does YubiKey have "Pi5 Vault" OATH account?
+- Is slot 2 configured with HMAC-SHA1 challenge-response?
 
 **Fix:**
 ```powershell
-# List OATH accounts
-ykman oath accounts list
+# Check slot 2 configuration
+ykman otp info
 
-# If "Pi5 Vault" missing, add it:
-ykman oath accounts add "Pi5 Vault" <your-seed>
+# If slot 2 is not configured, program it:
+ykman otp chalresp 2 <your-hmac-secret-from-recovery-document>
+
+# Verify it works:
+ykman otp calculate 2 7069352d7661756c74
 ```
 
 ### "Secret not found"
@@ -563,13 +519,9 @@ For issues or questions:
 
 ## Common Questions
 
-**Q: Does Google Authenticator weaken security? Doesn't that put secrets on my phone?**
-
-**A:** No. Google Auth is ONLY for disaster recovery (programming new YubiKeys if both are lost). It's NOT used for daily vault access. The TOTP seed never goes on pi5 - only on YubiKeys (in your possession) and optionally on your phone. See `docs/SECURITY-FAQ.md` for detailed explanation.
-
 **Q: What if someone has root access to my pi5?**
 
-**A:** They can only decrypt secrets for 30 minutes (cached session key). After that, they need your YubiKey + laptop + SSH tunnel to derive new keys. TOTP seed is never on pi5. See `docs/SECURITY-FAQ.md` for details.
+**A:** They can only decrypt secrets for 30 minutes (cached session key). After that, they need your physical YubiKey + laptop + SSH tunnel to derive new keys. The HMAC secret is never on pi5. See `docs/SECURITY-FAQ.md` for details.
 
 **Q: Why not use HashiCorp Vault / Bitwarden / SOPS?**
 

@@ -48,35 +48,35 @@ try {
         try {
             if ($request.HttpMethod -eq "POST" -and $request.Url.AbsolutePath -eq "/derive-key") {
                 Write-Host "[$timestamp] " -NoNewline -ForegroundColor Gray
-                Write-Host "🔐 Touch YubiKey to derive session key..." -ForegroundColor Yellow
+                Write-Host "🔐 Deriving session key from YubiKey..." -ForegroundColor Yellow
 
-                # Get TOTP from YubiKey
-                $totp = & ykman oath accounts code "Pi5 Vault" --single 2>&1
+                # Fixed challenge for HMAC-SHA1 key derivation ("pi5-vault" in hex).
+                # Both YubiKeys must be programmed with the same HMAC-SHA1 secret so that
+                # either key produces the same output for this challenge.
+                $vaultChallenge = "7069352d7661756c74"
+
+                # Compute HMAC-SHA1 challenge-response from YubiKey slot 2
+                $hmacHex = & ykman otp calculate 2 $vaultChallenge 2>&1
 
                 # Check if command failed or returned an error object
-                if ($LASTEXITCODE -ne 0 -or $totp -is [System.Management.Automation.ErrorRecord]) {
-                    throw "YubiKey error: Is 'Pi5 Vault' TOTP account configured? Run: ykman oath accounts list"
+                if ($LASTEXITCODE -ne 0 -or $hmacHex -is [System.Management.Automation.ErrorRecord]) {
+                    throw "YubiKey error: Is slot 2 configured with HMAC-SHA1 challenge-response? Run: ykman otp info"
                 }
 
-                # Convert to string and trim (in case it's not already a string)
-                $totp = "$totp".Trim()
+                # Convert to string and trim
+                $hmacHex = "$hmacHex".Trim()
 
-                # Derive session key from TOTP + time window
-                # Time window = 30-minute buckets
-                $window = [Math]::Floor([DateTime]::UtcNow.Ticks / 18000000000)
-                $keyInput = "$totp-$window"
-
+                # SHA256 the HMAC output to produce a 32-byte AES-256 key
                 $sha256 = [System.Security.Cryptography.SHA256]::Create()
-                $keyBytes = $sha256.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($keyInput))
+                $keyBytes = $sha256.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($hmacHex))
                 $sessionKey = [Convert]::ToBase64String($keyBytes)
 
                 Write-Host "[$timestamp] " -NoNewline -ForegroundColor Gray
-                Write-Host "✓ Session key derived (valid for 30min)" -ForegroundColor Green
+                Write-Host "✓ Session key derived" -ForegroundColor Green
 
                 $responseBody = @{
                     session_key = $sessionKey
                     expires_at  = [DateTime]::UtcNow.AddMinutes(30).ToString("o")
-                    window      = $window
                 } | ConvertTo-Json
 
                 $buffer = [System.Text.Encoding]::UTF8.GetBytes($responseBody)

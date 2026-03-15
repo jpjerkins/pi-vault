@@ -27,16 +27,21 @@ type ErrorResponse struct {
 	Error string `json:"error"`
 }
 
+// Fixed challenge for HMAC-SHA1 key derivation ("pi5-vault" in hex).
+// Both YubiKeys must be programmed with the same HMAC-SHA1 secret so that
+// either key produces the same output for this challenge.
+const vaultChallenge = "7069352d7661756c74"
+
 func deriveSessionKey(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
-	log.Println("🔐 Touch YubiKey to derive session key...")
+	log.Println("🔐 Deriving session key from YubiKey (plug in YubiKey if not already)...")
 
-	// Get TOTP from YubiKey
-	cmd := exec.Command("ykman", "oath", "accounts", "code", "Pi5 Vault", "--single")
+	// Compute HMAC-SHA1 challenge-response from YubiKey slot 2
+	cmd := exec.Command("ykman", "otp", "calculate", "2", vaultChallenge)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		errMsg := fmt.Sprintf("YubiKey error: %v - %s", err, output)
@@ -47,22 +52,18 @@ func deriveSessionKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	totp := strings.TrimSpace(string(output))
+	hmacHex := strings.TrimSpace(string(output))
 
-	// Calculate time window (30min buckets = 1800 seconds)
-	window := time.Now().UTC().Unix() / 1800
-
-	// Derive session key = SHA256(TOTP + window)
-	keyInput := fmt.Sprintf("%s-%d", totp, window)
-	hash := sha256.Sum256([]byte(keyInput))
+	// SHA256 the HMAC output to produce a 32-byte AES-256 key
+	hash := sha256.Sum256([]byte(hmacHex))
 	sessionKey := base64.StdEncoding.EncodeToString(hash[:])
 
-	log.Println("✓ Session key derived (valid for 30min)")
+	log.Println("✓ Session key derived")
 
 	response := KeyResponse{
 		SessionKey: sessionKey,
 		ExpiresAt:  time.Now().Add(30 * time.Minute),
-		Window:     window,
+		Window:     0,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
