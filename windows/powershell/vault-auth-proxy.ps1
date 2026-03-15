@@ -52,11 +52,14 @@ try {
 
                 # Get TOTP from YubiKey
                 $totp = & ykman oath accounts code "Pi5 Vault" --single 2>&1
-                if ($LASTEXITCODE -ne 0) {
-                    throw "YubiKey error: $totp"
+
+                # Check if command failed or returned an error object
+                if ($LASTEXITCODE -ne 0 -or $totp -is [System.Management.Automation.ErrorRecord]) {
+                    throw "YubiKey error: Is 'Pi5 Vault' TOTP account configured? Run: ykman oath accounts list"
                 }
 
-                $totp = $totp.Trim()
+                # Convert to string and trim (in case it's not already a string)
+                $totp = "$totp".Trim()
 
                 # Derive session key from TOTP + time window
                 # Time window = 30-minute buckets
