@@ -28,7 +28,7 @@ const (
 type SessionKeyResponse struct {
 	SessionKey string `json:"session_key"`
 	ExpiresAt  string `json:"expires_at"`
-	Window     int64  `json:"window"`
+	Window     float64 `json:"window"`
 }
 
 type AuditEntry struct {
