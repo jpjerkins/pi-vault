@@ -3,22 +3,23 @@
 This is a YubiKey-based secret management system for Raspberry Pi 5.
 
 ## Design Documentation
+The documentation for this project is in the `1 Projects/Pi5 Vault` folder in my notes.
 
 **Full design and architecture documentation:**
 
 **Windows (Nextcloud synced):**
 ```
-..\..\..\Users\PhilJ\Nextcloud\Notes\1 Projects\Pi5 Vault\Pi5 Secret Management - On-Demand Design.md
+Pi5 Secret Management - On-Demand Design.md
 ```
 
 **Pi5 (if Nextcloud synced to ~/Nextcloud):**
 ```
-~/Nextcloud/Notes/1 Projects/Pi5 Vault/Pi5 Secret Management - On-Demand Design.md
+Pi5 Secret Management - On-Demand Design.md
 ```
 
 **Direct path (Windows):**
 ```
-C:\Users\PhilJ\Nextcloud\Notes\1 Projects\Pi5 Vault\Pi5 Secret Management - On-Demand Design.md
+Pi5 Secret Management - On-Demand Design.md
 ```
 
 ## Quick Overview
