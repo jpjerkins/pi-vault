@@ -31,16 +31,22 @@ try {
     Write-Host ""
 }
 
-while ($listener.IsListening) {
-    try {
-        $context = $listener.GetContext()
+try {
+    while ($listener.IsListening) {
+        # Use async GetContext with timeout so Ctrl+C can interrupt
+        $contextTask = $listener.GetContextAsync()
+
+        while (-not $contextTask.AsyncWaitHandle.WaitOne(200)) {
+            # Check every 200ms to allow Ctrl+C to interrupt
+        }
+
+        $context = $contextTask.GetAwaiter().GetResult()
         $request = $context.Request
         $response = $context.Response
-
         $timestamp = Get-Date -Format 'HH:mm:ss'
 
-        if ($request.HttpMethod -eq "POST" -and $request.Url.AbsolutePath -eq "/derive-key") {
-            try {
+        try {
+            if ($request.HttpMethod -eq "POST" -and $request.Url.AbsolutePath -eq "/derive-key") {
                 Write-Host "[$timestamp] " -NoNewline -ForegroundColor Gray
                 Write-Host "🔐 Touch YubiKey to derive session key..." -ForegroundColor Yellow
 
@@ -76,46 +82,51 @@ while ($listener.IsListening) {
                 $response.StatusCode = 200
                 $response.OutputStream.Write($buffer, 0, $buffer.Length)
             }
-            catch {
-                Write-Host "[$timestamp] " -NoNewline -ForegroundColor Gray
-                Write-Host "❌ Error: $_" -ForegroundColor Red
+            elseif ($request.HttpMethod -eq "GET" -and $request.Url.AbsolutePath -eq "/health") {
+                $healthBody = @{
+                    status    = "running"
+                    timestamp = [DateTime]::UtcNow.ToString("o")
+                } | ConvertTo-Json
 
-                $errorBody = @{error = $_.Exception.Message} | ConvertTo-Json
-                $buffer = [System.Text.Encoding]::UTF8.GetBytes($errorBody)
+                $buffer = [System.Text.Encoding]::UTF8.GetBytes($healthBody)
                 $response.ContentLength64 = $buffer.Length
                 $response.ContentType = "application/json"
-                $response.StatusCode = 500
+                $response.StatusCode = 200
                 $response.OutputStream.Write($buffer, 0, $buffer.Length)
+
+                Write-Host "[$timestamp] " -NoNewline -ForegroundColor Gray
+                Write-Host "Health check" -ForegroundColor Gray
+            }
+            else {
+                $response.StatusCode = 404
+                Write-Host "[$timestamp] " -NoNewline -ForegroundColor Gray
+                Write-Host "404 Not Found: $($request.HttpMethod) $($request.Url.AbsolutePath)" -ForegroundColor Red
             }
         }
-        elseif ($request.HttpMethod -eq "GET" -and $request.Url.AbsolutePath -eq "/health") {
-            $healthBody = @{
-                status    = "running"
-                timestamp = [DateTime]::UtcNow.ToString("o")
-            } | ConvertTo-Json
+        catch {
+            Write-Host "[$timestamp] " -NoNewline -ForegroundColor Gray
+            Write-Host "❌ Error: $_" -ForegroundColor Red
 
-            $buffer = [System.Text.Encoding]::UTF8.GetBytes($healthBody)
+            $errorBody = @{error = $_.Exception.Message} | ConvertTo-Json
+            $buffer = [System.Text.Encoding]::UTF8.GetBytes($errorBody)
             $response.ContentLength64 = $buffer.Length
             $response.ContentType = "application/json"
-            $response.StatusCode = 200
+            $response.StatusCode = 500
             $response.OutputStream.Write($buffer, 0, $buffer.Length)
-
-            Write-Host "[$timestamp] " -NoNewline -ForegroundColor Gray
-            Write-Host "Health check" -ForegroundColor Gray
         }
-        else {
-            $response.StatusCode = 404
-            Write-Host "[$timestamp] " -NoNewline -ForegroundColor Gray
-            Write-Host "404 Not Found: $($request.HttpMethod) $($request.Url.AbsolutePath)" -ForegroundColor Red
+        finally {
+            $response.Close()
         }
-
-        $response.Close()
-    }
-    catch {
-        Write-Host "Error processing request: $_" -ForegroundColor Red
     }
 }
-
-$listener.Stop()
-Write-Host ""
-Write-Host "Auth proxy stopped." -ForegroundColor Yellow
+catch {
+    # Ctrl+C or other interruption
+    if ($_.Exception.Message -notlike "*operation was canceled*") {
+        Write-Host "Error: $_" -ForegroundColor Red
+    }
+}
+finally {
+    $listener.Stop()
+    Write-Host ""
+    Write-Host "✓ Auth proxy stopped." -ForegroundColor Yellow
+}
