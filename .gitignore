@@ -1,0 +1,55 @@
+# Binaries
+*.exe
+vault
+vault-get
+vault-set
+vault-list
+vault-delete
+vault-api
+vault-auth-proxy
+
+# Go
+*.o
+*.a
+*.so
+go.sum
+
+# Test secrets (if any created during development)
+*.enc
+.session_key
+.session_expiry
+.audit.log
+test-secrets/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+*.temp
+.cache/
+
+# Environment files
+.env
+.env.local
+*.secret
+
+# Build artifacts
+dist/
+build/
+bin/
+
+# Claude Code local settings
+.claude/settings.local.json
