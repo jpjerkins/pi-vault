@@ -137,8 +137,13 @@ vault-delete test_secret
 - [x] `pi5/vault-t2/acl.yaml.example` — ACL config template with UID range documentation
 - [x] `/etc/fuse.conf` `user_allow_other` configured on pi5
 
+**✅ Tier 2 — Phase 3 (complete):**
+- [x] `pi5/vault-t2/cmd/vault-t2-acl-update/main.go` — privileged helper: validates and installs `/etc/vault-t2/acl.yaml` (run via sudo)
+- [x] `~/dcm/lib/registry.py` — `vault_uid` and `vault_secrets` fields added to `ServiceConfig`
+- [x] `~/dcm/lib/secrets.py` — `generate_vault_acl()` and `vault_acl_drift()` functions
+- [x] `~/dcm/dcm.py` — `dcm secrets acl-generate` command; drift warnings in `dcm secrets sync` and `dcm secrets check`
+
 **🚧 Tier 2 — In Progress:**
-- [ ] Phase 3: `vault-t2-acl-update` privileged helper + DCM drift detection
 - [ ] Phase 4: envfiles virtual path (`/run/vault-t2-fs/envfiles/`)
 - [ ] Phase 5: systemd service + tmpfiles.d + install documentation
 
@@ -161,8 +166,10 @@ pi5-vault/
 │       ├── cmd/
 │       │   ├── vault-t2/
 │       │   │   └── main.go       # Tier 2 CLI entrypoint
-│       │   └── vault-t2-fuse/
-│       │       └── main.go       # FUSE daemon entrypoint
+│       │   ├── vault-t2-fuse/
+│       │   │   └── main.go       # FUSE daemon entrypoint
+│       │   └── vault-t2-acl-update/
+│       │       └── main.go       # Privileged ACL update helper
 │       ├── internal/
 │       │   ├── crypto.go         # Seal/unseal/encrypt/decrypt/audit
 │       │   └── hardware.go       # Hardware fingerprint derivation
