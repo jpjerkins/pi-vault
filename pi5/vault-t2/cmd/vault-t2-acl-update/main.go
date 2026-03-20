@@ -54,8 +54,9 @@ func main() {
 	}
 
 	// Ensure the config directory exists.
-	if err := os.MkdirAll(filepath.Dir(aclPath), aclDirPerm); err != nil {
-		fatalf("creating config dir %s: %v", filepath.Dir(aclPath), err)
+	aclDir := filepath.Dir(aclPath)
+	if err := os.MkdirAll(aclDir, aclDirPerm); err != nil {
+		fatalf("creating config dir %s: %v", aclDir, err)
 	}
 
 	// Atomic write: temp file → chmod → rename into place.
