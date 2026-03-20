@@ -32,8 +32,29 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"time"
 )
+
+// ─── shared AES-GCM helper ────────────────────────────────────────────────────
+
+// newGCMCipher constructs an AES-256-GCM AEAD from a 32-byte key.
+// All four crypto operations (SealSeed, UnsealSeed, EncryptSecret,
+// DecryptSecret) share this initialization path.
+func newGCMCipher(key []byte) (cipher.AEAD, error) {
+	if len(key) != 32 {
+		return nil, fmt.Errorf("key must be exactly 32 bytes, got %d", len(key))
+	}
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return nil, fmt.Errorf("creating AES cipher: %w", err)
+	}
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return nil, fmt.Errorf("creating GCM wrapper: %w", err)
+	}
+	return gcm, nil
+}
 
 // ─── Seal / Unseal ────────────────────────────────────────────────────────────
 
@@ -43,17 +64,9 @@ func SealSeed(seed []byte, fingerprint []byte) ([]byte, error) {
 	if len(seed) != 32 {
 		return nil, fmt.Errorf("seed must be exactly 32 bytes, got %d", len(seed))
 	}
-	if len(fingerprint) != 32 {
-		return nil, fmt.Errorf("fingerprint must be exactly 32 bytes, got %d", len(fingerprint))
-	}
-
-	block, err := aes.NewCipher(fingerprint)
+	gcm, err := newGCMCipher(fingerprint)
 	if err != nil {
-		return nil, fmt.Errorf("creating AES cipher: %w", err)
-	}
-	gcm, err := cipher.NewGCM(block)
-	if err != nil {
-		return nil, fmt.Errorf("creating GCM wrapper: %w", err)
+		return nil, err
 	}
 
 	nonce := make([]byte, gcm.NonceSize()) // 12 bytes
@@ -68,17 +81,9 @@ func SealSeed(seed []byte, fingerprint []byte) ([]byte, error) {
 // UnsealSeed decrypts the sealed seed blob produced by SealSeed.
 // The blob must be [ 12-byte nonce || ciphertext+tag ].
 func UnsealSeed(sealedSeed []byte, fingerprint []byte) ([]byte, error) {
-	if len(fingerprint) != 32 {
-		return nil, fmt.Errorf("fingerprint must be exactly 32 bytes, got %d", len(fingerprint))
-	}
-
-	block, err := aes.NewCipher(fingerprint)
+	gcm, err := newGCMCipher(fingerprint)
 	if err != nil {
-		return nil, fmt.Errorf("creating AES cipher: %w", err)
-	}
-	gcm, err := cipher.NewGCM(block)
-	if err != nil {
-		return nil, fmt.Errorf("creating GCM wrapper: %w", err)
+		return nil, err
 	}
 
 	nonceSize := gcm.NonceSize() // 12
@@ -103,17 +108,9 @@ func UnsealSeed(sealedSeed []byte, fingerprint []byte) ([]byte, error) {
 //
 //	[ 4-byte big-endian plaintext length ][ 12-byte nonce ][ ciphertext + 16-byte GCM tag ]
 func EncryptSecret(plaintext []byte, key []byte) ([]byte, error) {
-	if len(key) != 32 {
-		return nil, fmt.Errorf("key must be exactly 32 bytes, got %d", len(key))
-	}
-
-	block, err := aes.NewCipher(key)
+	gcm, err := newGCMCipher(key)
 	if err != nil {
-		return nil, fmt.Errorf("creating AES cipher: %w", err)
-	}
-	gcm, err := cipher.NewGCM(block)
-	if err != nil {
-		return nil, fmt.Errorf("creating GCM wrapper: %w", err)
+		return nil, err
 	}
 
 	nonce := make([]byte, gcm.NonceSize()) // 12 bytes
@@ -122,7 +119,7 @@ func EncryptSecret(plaintext []byte, key []byte) ([]byte, error) {
 	}
 
 	// Encode plaintext length as 4-byte big-endian prefix.
-	// This lets the Phase-2 FUSE layer answer Getattr without full decryption.
+	// This lets the FUSE layer answer Getattr without full decryption.
 	lengthPrefix := make([]byte, 4)
 	binary.BigEndian.PutUint32(lengthPrefix, uint32(len(plaintext)))
 
@@ -139,10 +136,6 @@ func EncryptSecret(plaintext []byte, key []byte) ([]byte, error) {
 // DecryptSecret decrypts a .enc file payload produced by EncryptSecret.
 // It reads and strips the 4-byte length prefix, then decrypts the remainder.
 func DecryptSecret(payload []byte, key []byte) ([]byte, error) {
-	if len(key) != 32 {
-		return nil, fmt.Errorf("key must be exactly 32 bytes, got %d", len(key))
-	}
-
 	// Minimum: 4 (length) + 12 (nonce) + 16 (GCM tag) = 32 bytes
 	if len(payload) < 32 {
 		return nil, fmt.Errorf("payload too short: %d bytes", len(payload))
@@ -152,13 +145,9 @@ func DecryptSecret(payload []byte, key []byte) ([]byte, error) {
 	plaintextLen := binary.BigEndian.Uint32(payload[:4])
 	body := payload[4:] // [ 12-byte nonce ][ ciphertext + tag ]
 
-	block, err := aes.NewCipher(key)
+	gcm, err := newGCMCipher(key)
 	if err != nil {
-		return nil, fmt.Errorf("creating AES cipher: %w", err)
-	}
-	gcm, err := cipher.NewGCM(block)
-	if err != nil {
-		return nil, fmt.Errorf("creating GCM wrapper: %w", err)
+		return nil, err
 	}
 
 	nonceSize := gcm.NonceSize() // 12
@@ -219,7 +208,7 @@ func AuditLog(dataDir, action, secret string, callerPID int, success bool, errMs
 	}
 	line = append(line, '\n')
 
-	logPath := dataDir + "/.audit.log"
+	logPath := filepath.Join(dataDir, ".audit.log")
 	f, err := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "vault-t2: audit log open error: %v\n", err)

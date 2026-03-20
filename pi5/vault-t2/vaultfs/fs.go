@@ -210,13 +210,14 @@ func (s *secretNode) Open(ctx context.Context, _ uint32) (fs.FileHandle, uint32,
 // served correctly without a daemon restart.
 func (s *secretNode) Read(ctx context.Context, _ fs.FileHandle, dest []byte, off int64) (fuse.ReadResult, syscall.Errno) {
 	caller, ok := fuse.FromContext(ctx)
-	pid := 0
-	if ok {
-		pid = int(caller.Pid)
-		// Re-check ACL as defense in depth.
-		if !s.acl.Allowed(s.name, caller.Uid) {
-			return nil, syscall.EACCES
-		}
+	if !ok {
+		// FUSE context unavailable — deny as a safe default.
+		return nil, syscall.EACCES
+	}
+	pid := int(caller.Pid)
+	// Re-check ACL as defense in depth.
+	if !s.acl.Allowed(s.name, caller.Uid) {
+		return nil, syscall.EACCES
 	}
 
 	encPath := filepath.Join(s.dataDir, s.name+".enc")

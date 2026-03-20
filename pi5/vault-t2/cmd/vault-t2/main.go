@@ -23,10 +23,15 @@ import (
 )
 
 const (
-	defaultDataDir  = "/mnt/data/vault-t2"
+	defaultDataDir   = "/mnt/data/vault-t2"
 	defaultConfigDir = "/etc/vault-t2"
-	sealedSeedFile  = ".sealed_seed"
+	sealedSeedFile   = ".sealed_seed"
 )
+
+// binaryName is the name of the running binary, computed once at startup.
+// Used to distinguish symlink invocation (t2-get etc.) from direct invocation
+// (vault-t2 get). Avoids repeating filepath.Base(os.Args[0]) across functions.
+var binaryName = filepath.Base(os.Args[0])
 
 func main() {
 	cmd := commandName()
@@ -52,9 +57,8 @@ func main() {
 // commandName returns the effective subcommand, either from the binary name
 // (symlink dispatch) or from os.Args[1] (direct invocation as "vault-t2 <cmd>").
 func commandName() string {
-	base := filepath.Base(os.Args[0])
-	if base != "vault-t2" {
-		return base // invoked as t2-get, t2-set, etc.
+	if binaryName != "vault-t2" {
+		return binaryName // invoked as t2-get, t2-set, etc.
 	}
 	if len(os.Args) < 2 {
 		return ""
@@ -183,7 +187,7 @@ func runSet() {
 
 	// Strip the subcommand arg when invoked as "vault-t2 set <name>".
 	rawArgs := os.Args[1:]
-	if filepath.Base(os.Args[0]) == "vault-t2" {
+	if binaryName == "vault-t2" {
 		rawArgs = rawArgs[1:] // skip "set" / "t2-set"
 	}
 
@@ -318,7 +322,7 @@ func cliArgs(min int) []string {
 	// When invoked as a symlink (t2-get), all of os.Args[1:] are positional.
 	// When invoked as "vault-t2 get <args>", os.Args[1] is the subcommand.
 	args := os.Args[1:]
-	if filepath.Base(os.Args[0]) == "vault-t2" && len(args) > 0 {
+	if binaryName == "vault-t2" && len(args) > 0 {
 		args = args[1:] // drop the subcommand word
 	}
 	if len(args) < min {
