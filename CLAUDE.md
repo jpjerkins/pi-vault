@@ -117,7 +117,7 @@ vault-delete test_secret
 
 ## Implementation Status
 
-**✅ Implemented (Phase 1):**
+**✅ Tier 1 (complete):**
 - [x] Go binary for pi5 (vault.go)
 - [x] PowerShell auth proxy
 - [x] Go auth proxy
@@ -126,7 +126,23 @@ vault-delete test_secret
 - [x] Audit logging
 - [x] CLI commands (get, set, list, delete)
 
-**🚧 TODO (Future Phases):**
+**✅ Tier 2 — Phase 1 (complete):**
+- [x] `pi5/vault-t2/internal/crypto.go` — seal/unseal, encrypt/decrypt (4-byte length prefix), audit log
+- [x] `pi5/vault-t2/internal/hardware.go` — hardware fingerprint from machine-id + CPU serial
+- [x] `pi5/vault-t2/cmd/vault-t2/main.go` — CLI with symlink dispatch (t2-provision, t2-get, t2-set, t2-list, t2-delete)
+
+**✅ Tier 2 — Phase 2 (complete):**
+- [x] `pi5/vault-t2/vaultfs/fs.go` — FUSE filesystem with UID ACL enforcement
+- [x] `pi5/vault-t2/cmd/vault-t2-fuse/main.go` — daemon: unseal → load ACL → mount → signal handling
+- [x] `pi5/vault-t2/acl.yaml.example` — ACL config template with UID range documentation
+- [x] `/etc/fuse.conf` `user_allow_other` configured on pi5
+
+**🚧 Tier 2 — In Progress:**
+- [ ] Phase 3: `vault-t2-acl-update` privileged helper + DCM drift detection
+- [ ] Phase 4: envfiles virtual path (`/run/vault-t2-fs/envfiles/`)
+- [ ] Phase 5: systemd service + tmpfiles.d + install documentation
+
+**🚧 Tier 1 TODO (Future):**
 - [ ] Initialization wizard (YubiKey programming)
 - [ ] HTTP API for web apps
 - [ ] Recovery passphrase system
@@ -138,9 +154,24 @@ vault-delete test_secret
 
 ```
 pi5-vault/
-├── pi5/                          # Pi5 vault binary
-│   ├── vault.go                  # Main implementation
-│   └── build.sh                  # Build script
+├── pi5/                          # Pi5 binaries
+│   ├── vault.go                  # Tier 1 main implementation
+│   ├── build.sh                  # Tier 1 build script
+│   └── vault-t2/                 # Tier 2 Go module
+│       ├── cmd/
+│       │   ├── vault-t2/
+│       │   │   └── main.go       # Tier 2 CLI entrypoint
+│       │   └── vault-t2-fuse/
+│       │       └── main.go       # FUSE daemon entrypoint
+│       ├── internal/
+│       │   ├── crypto.go         # Seal/unseal/encrypt/decrypt/audit
+│       │   └── hardware.go       # Hardware fingerprint derivation
+│       ├── vaultfs/
+│       │   └── fs.go             # FUSE filesystem + UID ACL
+│       ├── acl.yaml.example      # ACL config template
+│       ├── build-t2.sh           # Tier 2 build script
+│       ├── go.mod
+│       └── go.sum
 ├── windows/                      # Windows auth proxies
 │   ├── powershell/
 │   │   └── vault-auth-proxy.ps1  # PowerShell version

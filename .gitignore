@@ -7,6 +7,14 @@ vault-list
 vault-delete
 vault-api
 vault-auth-proxy
+pi5/vault-t2/vault-t2
+pi5/vault-t2/vault-t2-fuse
+pi5/vault-t2/t2-provision
+pi5/vault-t2/t2-get
+pi5/vault-t2/t2-set
+pi5/vault-t2/t2-list
+pi5/vault-t2/t2-delete
+pi5/vault-t2/vault-t2-acl-update
 
 # Go
 *.o

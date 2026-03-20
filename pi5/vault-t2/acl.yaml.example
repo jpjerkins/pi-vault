@@ -1,0 +1,28 @@
+# /etc/vault-t2/acl.yaml
+#
+# Maps each secret name to the list of UIDs permitted to read it via the FUSE
+# mount at /run/vault-t2-fs/.
+#
+# Security properties:
+#   - This file must be owned root:root, mode 0644.
+#     Write access by any user-mode process is a structural vulnerability.
+#   - The daemon reads this file once at startup. ACL changes require:
+#       sudo systemctl restart vault-t2-fuse
+#   - Use UIDs from the reserved vault range: 65000–65099.
+#     Assign one UID per service in docker-compose.yml: user: "65001:65001"
+#   - A secret not listed here is unreadable by everyone (deny by default).
+#
+# Format: secret_name: [uid, uid, ...]
+# A secret may list multiple UIDs if it is shared between services.
+#
+# Example (replace with your actual secrets and UIDs):
+
+db_password:
+  - 65001   # postgres
+
+api_key_openai:
+  - 65002   # myapp
+
+smtp_password:
+  - 65002   # myapp
+  - 65003   # notification-worker (shared secret example)
