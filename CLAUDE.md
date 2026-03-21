@@ -148,8 +148,10 @@ vault-delete test_secret
 - [x] `pi5/vault-t2/cmd/vault-t2-fuse/main.go` — `--envfiles` flag, loads `envfiles.yaml` at startup (non-fatal if missing)
 - [x] `pi5/vault-t2/envfiles.yaml.example` — example config template
 
-**🚧 Tier 2 — In Progress:**
-- [ ] Phase 5: systemd service + tmpfiles.d + install documentation
+**✅ Tier 2 — Phase 5 (complete):**
+- [x] `pi5/vault-t2/vault-t2-fuse.service` — systemd unit (Before=docker.service, RequiresMountsFor=/mnt/data)
+- [x] `pi5/vault-t2/vault-t2.tmpfiles.conf` — recreates `/run/vault-t2-fs` on boot
+- [x] `pi5/vault-t2/docs/install.md` — full first-time setup guide
 
 **🚧 Tier 1 TODO (Future):**
 - [ ] Initialization wizard (YubiKey programming)

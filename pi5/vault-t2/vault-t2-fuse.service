@@ -1,0 +1,21 @@
+[Unit]
+Description=vault-t2 FUSE secret filesystem
+Documentation=https://github.com/jpjerkins/pi-vault
+# /mnt/data must be mounted before we read .sealed_seed from it
+RequiresMountsFor=/mnt/data
+After=local-fs.target
+# Docker must not start until the FUSE mount is available
+Before=docker.service
+
+[Service]
+Type=simple
+User=philj
+Group=philj
+ExecStart=/usr/local/bin/vault-t2-fuse
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
