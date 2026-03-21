@@ -115,6 +115,24 @@ vault-list
 vault-delete test_secret
 ```
 
+**Test vault-expose:**
+```bash
+# Expose a secret to tmpfs
+vault-expose test_secret --duration 1
+# Prints: /run/user/1000/vault-t1/test_secret
+# (blocks — run cleanup in another terminal or wait 1 min)
+
+# Verify file content matches vault-get
+diff <(vault-get test_secret) /run/user/$(id -u)/vault-t1/test_secret
+
+# Manual cleanup (from another terminal)
+vault-cleanup test_secret
+
+# Cleanup all
+vault-expose test_secret
+vault-cleanup --all
+```
+
 ## Implementation Status
 
 **✅ Tier 1 (complete):**
@@ -125,6 +143,8 @@ vault-delete test_secret
 - [x] AES-256-GCM encryption
 - [x] Audit logging
 - [x] CLI commands (get, set, list, delete)
+- [x] `vault-expose <name> [--duration N]` — decrypt to tmpfs file at `/run/user/<uid>/vault-t1/<name>`, auto-cleanup after N minutes (default 5), blocks with signal handler
+- [x] `vault-cleanup <name>|--all` — manual removal of exposed secret(s)
 
 **✅ Tier 2 — Phase 1 (complete):**
 - [x] `pi5/vault-t2/internal/crypto.go` — seal/unseal, encrypt/decrypt (4-byte length prefix), audit log

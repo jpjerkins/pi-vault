@@ -227,6 +227,51 @@ pi5$ vault-delete old_secret
 ✓ Secret deleted
 ```
 
+### Temporary File Access (vault-expose)
+
+Some tools (Google Workspace CLI, AWS CLI, etc.) require credential **files** rather than
+environment variables. `vault-expose` decrypts a secret to a memory-backed tmpfs so no
+plaintext ever touches disk:
+
+```bash
+# Expose a secret as a tmpfs file (default: auto-cleanup after 5 minutes)
+pi5$ vault-expose gws_credentials
+⚠ Secret exposed — will auto-cleanup in 5 minutes
+/run/user/1000/vault-t1/gws_credentials
+
+# Expose with a custom duration (1–60 minutes)
+pi5$ vault-expose api_key --duration 15
+⚠ Secret exposed — will auto-cleanup in 15 minutes
+/run/user/1000/vault-t1/api_key
+
+# Capture the path for use in scripts
+CREDS=$(vault-expose gws_credentials --duration 10)
+export GOOGLE_APPLICATION_CREDENTIALS="$CREDS"
+./my-tool --credentials-file "$CREDS"
+
+# vault-expose blocks until the timer expires or you press Ctrl-C
+# Ctrl-C triggers immediate cleanup
+```
+
+**Manual cleanup:**
+```bash
+# Remove one exposed secret
+pi5$ vault-cleanup gws_credentials
+✓ Cleaned up: gws_credentials
+
+# Remove all currently exposed secrets
+pi5$ vault-cleanup --all
+✓ Cleaned up 2 exposed secrets
+```
+
+**Security notes:**
+- Files land in `/run/user/<uid>/vault-t1/` — a tmpfs (memory-backed, not on disk)
+- File permissions are 0400 (owner read-only)
+- Auto-cleanup fires after the duration, on Ctrl-C, or on SIGTERM
+- If the process is killed unexpectedly, files persist until `vault-cleanup --all` or logout
+  (systemd clears `/run/user/<uid>/` on session logout)
+- All operations are audit-logged (actions: `expose`, `expose-cleanup`, `cleanup`, `cleanup-all`)
+
 ### Using in Scripts
 
 **Bash:**
@@ -457,6 +502,10 @@ ssh -v pi5
 ├── .session_key              # Cached session key (30min TTL)
 ├── .session_expiry           # Expiry timestamp
 └── .audit.log                # Access audit log
+
+/run/user/<uid>/vault-t1/     # tmpfs — created by vault-expose, cleared on logout
+├── gws_credentials           # Exposed secret (plaintext, memory-only)
+└── api_key
 ```
 
 ## Audit Log
@@ -466,8 +515,12 @@ All secret access is logged to `/mnt/data/secrets/.audit.log`:
 ```json
 {"timestamp":"2026-03-12T10:30:15Z","action":"get","secret":"db_password","success":true}
 {"timestamp":"2026-03-12T10:30:20Z","action":"set","secret":"api_key","success":true}
-{"timestamp":"2026-03-12T10:31:00Z","action":"get","secret":"db_password","success":true}
+{"timestamp":"2026-03-12T10:31:00Z","action":"expose","secret":"gws_credentials","success":true}
+{"timestamp":"2026-03-12T10:36:00Z","action":"expose-cleanup","secret":"gws_credentials","success":true}
+{"timestamp":"2026-03-12T10:40:00Z","action":"cleanup","secret":"api_key","success":true}
 ```
+
+Actions: `get`, `set`, `delete`, `expose`, `expose-cleanup`, `cleanup`, `cleanup-all`
 
 View recent access:
 ```bash
