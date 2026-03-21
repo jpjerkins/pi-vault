@@ -3,18 +3,13 @@ package internal
 import (
 	"bytes"
 	"os"
+	"path/filepath"
 	"testing"
 )
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
-func key32(b byte) []byte {
-	k := make([]byte, 32)
-	for i := range k {
-		k[i] = b
-	}
-	return k
-}
+func key32(b byte) []byte { return bytes.Repeat([]byte{b}, 32) }
 
 // ─── newGCMCipher ─────────────────────────────────────────────────────────────
 
@@ -181,7 +176,7 @@ func TestAuditLogWritesJSONL(t *testing.T) {
 	AuditLog(dir, "test-action", "my_secret", 1234, true, "")
 	AuditLog(dir, "test-action", "my_secret", 1234, false, "some error")
 
-	data, err := os.ReadFile(dir + "/.audit.log")
+	data, err := os.ReadFile(filepath.Join(dir, ".audit.log"))
 	if err != nil {
 		t.Fatalf("reading audit log: %v", err)
 	}

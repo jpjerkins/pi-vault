@@ -16,14 +16,14 @@ func TestEmptyACLDeniesAll(t *testing.T) {
 }
 
 func TestLoadACLAllowedAndDenied(t *testing.T) {
-	yaml := `
+	content := `
 db_password:
   - 65001
   - 65002
 api_key:
   - 65003
 `
-	path := writeTempFile(t, yaml)
+	path := writeTempFile(t, content)
 	acl, err := LoadACL(path)
 	if err != nil {
 		t.Fatalf("LoadACL: %v", err)
@@ -85,7 +85,7 @@ func TestEmptyEnvFilesHasNoEntries(t *testing.T) {
 }
 
 func TestLoadEnvFilesParsesCorrectly(t *testing.T) {
-	yaml := `
+	content := `
 nextcloud:
   uid: 65001
   env:
@@ -96,7 +96,7 @@ myapp:
   env:
     DATABASE_URL: db_password_myapp
 `
-	path := writeTempFile(t, yaml)
+	path := writeTempFile(t, content)
 	ef, err := LoadEnvFiles(path)
 	if err != nil {
 		t.Fatalf("LoadEnvFiles: %v", err)
