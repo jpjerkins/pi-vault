@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"syscall"
 
@@ -83,6 +84,51 @@ func (a ACL) Allowed(secret string, uid uint32) bool {
 	return ok
 }
 
+// ─── EnvFiles config ──────────────────────────────────────────────────────────
+
+// EnvFileEntry configures one virtual envfile under /run/vault-t2-fs/envfiles/.
+type EnvFileEntry struct {
+	UID uint32            // caller UID required to read this file
+	Env map[string]string // env var name → vault-t2 secret name
+}
+
+// EnvFiles maps a service name to its envfile configuration.
+type EnvFiles map[string]EnvFileEntry
+
+// LoadEnvFiles reads and parses envfiles.yaml.
+//
+// Expected YAML format:
+//
+//	nextcloud:
+//	  uid: 65001
+//	  env:
+//	    NEXTCLOUD_ADMIN_PASSWORD: nextcloud_admin_password
+//	    NEXTCLOUD_DB_PASSWORD: db_password_nextcloud
+func LoadEnvFiles(path string) (EnvFiles, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("reading envfiles config %s: %w", path, err)
+	}
+
+	type rawEntry struct {
+		UID uint32            `yaml:"uid"`
+		Env map[string]string `yaml:"env"`
+	}
+	var raw map[string]rawEntry
+	if err := yaml.Unmarshal(data, &raw); err != nil {
+		return nil, fmt.Errorf("parsing envfiles config %s: %w", path, err)
+	}
+
+	ef := make(EnvFiles, len(raw))
+	for name, entry := range raw {
+		ef[name] = EnvFileEntry{UID: entry.UID, Env: entry.Env}
+	}
+	return ef, nil
+}
+
+// EmptyEnvFiles returns an EnvFiles with no entries.
+func EmptyEnvFiles() EnvFiles { return make(EnvFiles) }
+
 // ─── Root node ────────────────────────────────────────────────────────────────
 
 // VaultRoot is the root inode of the FUSE virtual filesystem.
@@ -90,9 +136,10 @@ func (a ACL) Allowed(secret string, uid uint32) bool {
 type VaultRoot struct {
 	fs.Inode
 
-	DataDir string // /mnt/data/vault-t2
-	Seed    []byte // unsealed tier2_seed (32 bytes, AES-256 key)
-	ACL     ACL
+	DataDir  string   // /mnt/data/vault-t2
+	Seed     []byte   // unsealed tier2_seed (32 bytes, AES-256 key)
+	ACL      ACL
+	EnvFiles EnvFiles // optional; envfiles/ subdir is hidden when empty
 }
 
 var (
@@ -125,13 +172,28 @@ func (v *VaultRoot) Readdir(_ context.Context) (fs.DirStream, syscall.Errno) {
 			Mode: syscall.S_IFREG | 0400,
 		})
 	}
+	if len(v.EnvFiles) > 0 {
+		entries = append(entries, fuse.DirEntry{
+			Name: "envfiles",
+			Mode: syscall.S_IFDIR | 0555,
+		})
+	}
 	return fs.NewListDirStream(entries), fs.OK
 }
 
-// Lookup resolves a filename to a SecretNode inode.
-// Reads only the 4-byte plaintext-length prefix from the .enc file — no full
-// decryption at Lookup time.
+// Lookup resolves a name to an inode.
+// "envfiles" resolves to the virtual envfiles directory (if configured).
+// All other names are resolved to secretNode inodes via their .enc files.
 func (v *VaultRoot) Lookup(ctx context.Context, name string, out *fuse.EntryOut) (*fs.Inode, syscall.Errno) {
+	if name == "envfiles" {
+		if len(v.EnvFiles) == 0 {
+			return nil, syscall.ENOENT
+		}
+		ed := &envfilesDirNode{dataDir: v.DataDir, seed: v.Seed, envFiles: v.EnvFiles}
+		out.Attr.Mode = syscall.S_IFDIR | 0555
+		return v.NewInode(ctx, ed, fs.StableAttr{Mode: syscall.S_IFDIR}), fs.OK
+	}
+
 	encPath := filepath.Join(v.DataDir, name+".enc")
 
 	// Open and read just the first 4 bytes (plaintext length prefix).
@@ -243,4 +305,148 @@ func (s *secretNode) Read(ctx context.Context, _ fs.FileHandle, dest []byte, off
 		end = int64(len(plaintext))
 	}
 	return fuse.ReadResultData(plaintext[off:end]), fs.OK
+}
+
+// ─── envfiles directory node ──────────────────────────────────────────────────
+
+// envfilesDirNode is the virtual /envfiles/ directory inside the FUSE mount.
+// It lists service names from envfiles.yaml and serves envfileNode children.
+type envfilesDirNode struct {
+	fs.Inode
+
+	dataDir  string
+	seed     []byte
+	envFiles EnvFiles
+}
+
+var (
+	_ fs.NodeGetattrer = (*envfilesDirNode)(nil)
+	_ fs.NodeReaddirer = (*envfilesDirNode)(nil)
+	_ fs.NodeLookuper  = (*envfilesDirNode)(nil)
+)
+
+func (e *envfilesDirNode) Getattr(_ context.Context, _ fs.FileHandle, out *fuse.AttrOut) syscall.Errno {
+	out.Mode = syscall.S_IFDIR | 0555
+	return fs.OK
+}
+
+func (e *envfilesDirNode) Readdir(_ context.Context) (fs.DirStream, syscall.Errno) {
+	entries := make([]fuse.DirEntry, 0, len(e.envFiles))
+	for name := range e.envFiles {
+		entries = append(entries, fuse.DirEntry{
+			Name: name,
+			Mode: syscall.S_IFREG | 0400,
+		})
+	}
+	return fs.NewListDirStream(entries), fs.OK
+}
+
+func (e *envfilesDirNode) Lookup(ctx context.Context, name string, out *fuse.EntryOut) (*fs.Inode, syscall.Errno) {
+	entry, ok := e.envFiles[name]
+	if !ok {
+		return nil, syscall.ENOENT
+	}
+
+	en := &envfileNode{
+		serviceName: name,
+		uid:         entry.UID,
+		env:         entry.Env,
+		dataDir:     e.dataDir,
+		seed:        e.seed,
+	}
+
+	out.Attr.Mode = syscall.S_IFREG | 0400
+	out.Attr.Size = 0 // unknown until read; FOPEN_DIRECT_IO makes this safe
+
+	child := e.NewInode(ctx, en, fs.StableAttr{Mode: syscall.S_IFREG})
+	return child, fs.OK
+}
+
+// ─── envfile node ─────────────────────────────────────────────────────────────
+
+// envfileNode is a virtual file whose content is KEY=VALUE pairs generated on
+// demand by decrypting all secrets listed in its EnvFileEntry. Callers whose
+// UID does not match the entry's UID receive EACCES.
+type envfileNode struct {
+	fs.Inode
+
+	serviceName string
+	uid         uint32
+	env         map[string]string // env var name → secret name
+	dataDir     string
+	seed        []byte
+}
+
+var (
+	_ fs.NodeGetattrer = (*envfileNode)(nil)
+	_ fs.NodeOpener    = (*envfileNode)(nil)
+	_ fs.NodeReader    = (*envfileNode)(nil)
+)
+
+func (e *envfileNode) Getattr(_ context.Context, _ fs.FileHandle, out *fuse.AttrOut) syscall.Errno {
+	out.Mode = 0400
+	out.Size = 0
+	return fs.OK
+}
+
+func (e *envfileNode) Open(ctx context.Context, _ uint32) (fs.FileHandle, uint32, syscall.Errno) {
+	caller, ok := fuse.FromContext(ctx)
+	if !ok {
+		return nil, 0, syscall.EACCES
+	}
+	if caller.Uid != e.uid {
+		internal.AuditLog(e.dataDir, "envfile-denied", e.serviceName, int(caller.Pid), false, "uid not authorized")
+		return nil, 0, syscall.EACCES
+	}
+	return nil, fuse.FOPEN_DIRECT_IO, fs.OK
+}
+
+// Read decrypts all secrets for this envfile and returns KEY=VALUE lines.
+// Keys are sorted for deterministic output. A failure on any single secret
+// returns EIO for the whole file — partial envfiles are unsafe.
+func (e *envfileNode) Read(ctx context.Context, _ fs.FileHandle, dest []byte, off int64) (fuse.ReadResult, syscall.Errno) {
+	caller, ok := fuse.FromContext(ctx)
+	if !ok {
+		return nil, syscall.EACCES
+	}
+	pid := int(caller.Pid)
+	if caller.Uid != e.uid {
+		return nil, syscall.EACCES
+	}
+
+	// Sort keys so output is deterministic regardless of map iteration order.
+	keys := make([]string, 0, len(e.env))
+	for k := range e.env {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	var buf strings.Builder
+	for _, envVar := range keys {
+		secretName := e.env[envVar]
+		encPath := filepath.Join(e.dataDir, secretName+".enc")
+		payload, err := os.ReadFile(encPath)
+		if err != nil {
+			internal.AuditLog(e.dataDir, "envfile-read", e.serviceName, pid, false, err.Error())
+			return nil, syscall.EIO
+		}
+		plaintext, err := internal.DecryptSecret(payload, e.seed)
+		if err != nil {
+			internal.AuditLog(e.dataDir, "envfile-read", e.serviceName, pid, false, err.Error())
+			return nil, syscall.EIO
+		}
+		fmt.Fprintf(&buf, "%s=%s\n", envVar, string(plaintext))
+	}
+
+	internal.AuditLog(e.dataDir, "envfile-read", e.serviceName, pid, true, "")
+
+	content := []byte(buf.String())
+	if off >= int64(len(content)) {
+		return fuse.ReadResultData([]byte{}), fs.OK
+	}
+	end := off + int64(len(dest))
+	if end > int64(len(content)) {
+		end = int64(len(content))
+	}
+	return fuse.ReadResultData(content[off:end]), fs.OK
 }

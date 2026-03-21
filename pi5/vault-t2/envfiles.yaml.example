@@ -1,0 +1,32 @@
+# /etc/vault-t2/envfiles.yaml
+#
+# Maps service names to virtual envfiles served at /run/vault-t2-fs/envfiles/<name>.
+#
+# Each entry declares:
+#   uid  - the UID that is permitted to read this envfile (must be in the
+#           65000-65099 vault UID range; set via `user: "65001:65001"` in
+#           the compose file)
+#   env  - map of ENV_VAR_NAME: secret_name (secret_name is the vault-t2
+#           secret, i.e. a .enc file in /mnt/data/vault-t2/)
+#
+# Usage in docker-compose:
+#
+#   services:
+#     nextcloud:
+#       user: "65001:65001"
+#       env_file: /run/vault-t2-fs/envfiles/nextcloud
+#
+# The file is read once at daemon startup. Changes require a daemon restart:
+#   sudo systemctl restart vault-t2-fuse
+
+nextcloud:
+  uid: 65001
+  env:
+    NEXTCLOUD_ADMIN_PASSWORD: nextcloud_admin_password
+    NEXTCLOUD_DB_PASSWORD: db_password_nextcloud
+
+myapp:
+  uid: 65002
+  env:
+    DATABASE_URL: db_password_myapp
+    OPENAI_API_KEY: api_key_openai

@@ -143,8 +143,12 @@ vault-delete test_secret
 - [x] `~/dcm/lib/secrets.py` — `generate_vault_acl()` and `vault_acl_drift()` functions
 - [x] `~/dcm/dcm.py` — `dcm secrets acl-generate` command; drift warnings in `dcm secrets sync` and `dcm secrets check`
 
+**✅ Tier 2 — Phase 4 (complete):**
+- [x] `pi5/vault-t2/vaultfs/fs.go` — `EnvFiles` type, `LoadEnvFiles()`, `envfilesDirNode`, `envfileNode` (KEY=VALUE generation on read, UID ACL)
+- [x] `pi5/vault-t2/cmd/vault-t2-fuse/main.go` — `--envfiles` flag, loads `envfiles.yaml` at startup (non-fatal if missing)
+- [x] `pi5/vault-t2/envfiles.yaml.example` — example config template
+
 **🚧 Tier 2 — In Progress:**
-- [ ] Phase 4: envfiles virtual path (`/run/vault-t2-fs/envfiles/`)
 - [ ] Phase 5: systemd service + tmpfiles.d + install documentation
 
 **🚧 Tier 1 TODO (Future):**
@@ -176,6 +180,7 @@ pi5-vault/
 │       ├── vaultfs/
 │       │   └── fs.go             # FUSE filesystem + UID ACL
 │       ├── acl.yaml.example      # ACL config template
+│       ├── envfiles.yaml.example # envfiles config template
 │       ├── build-t2.sh           # Tier 2 build script
 │       ├── go.mod
 │       └── go.sum

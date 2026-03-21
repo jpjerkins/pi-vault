@@ -30,19 +30,21 @@ import (
 )
 
 const (
-	defaultMountpoint = "/run/vault-t2-fs"
-	defaultDataDir    = "/mnt/data/vault-t2"
-	defaultACLPath    = "/etc/vault-t2/acl.yaml"
+	defaultMountpoint    = "/run/vault-t2-fs"
+	defaultDataDir       = "/mnt/data/vault-t2"
+	defaultACLPath       = "/etc/vault-t2/acl.yaml"
+	defaultEnvFilesPath  = "/etc/vault-t2/envfiles.yaml"
 )
 
 func main() {
-	mountpoint := flag.String("mountpoint", defaultMountpoint, "FUSE mount point")
-	dataDir := flag.String("data-dir", defaultDataDir, "Encrypted secrets directory")
-	aclPath := flag.String("acl", defaultACLPath, "Path to acl.yaml")
-	debug := flag.Bool("debug", false, "Enable FUSE debug logging")
+	mountpoint    := flag.String("mountpoint", defaultMountpoint, "FUSE mount point")
+	dataDir       := flag.String("data-dir", defaultDataDir, "Encrypted secrets directory")
+	aclPath       := flag.String("acl", defaultACLPath, "Path to acl.yaml")
+	envFilesPath  := flag.String("envfiles", defaultEnvFilesPath, "Path to envfiles.yaml")
+	debug         := flag.Bool("debug", false, "Enable FUSE debug logging")
 	flag.Parse()
 
-	logf("starting (data-dir=%s, mountpoint=%s, acl=%s)", *dataDir, *mountpoint, *aclPath)
+	logf("starting (data-dir=%s, mountpoint=%s, acl=%s, envfiles=%s)", *dataDir, *mountpoint, *aclPath, *envFilesPath)
 
 	// ── Unseal ────────────────────────────────────────────────────────────────
 
@@ -77,6 +79,18 @@ func main() {
 		logf("ACL loaded from %s", *aclPath)
 	}
 
+	// ── Load envfiles config ───────────────────────────────────────────────────
+
+	envFiles, err := vaultfs.LoadEnvFiles(*envFilesPath)
+	if err != nil {
+		// Non-fatal: envfiles is optional. Warn and continue without it.
+		logf("WARNING: could not load envfiles config from %s: %v", *envFilesPath, err)
+		logf("WARNING: /envfiles/ virtual path will not be available")
+		envFiles = vaultfs.EmptyEnvFiles()
+	} else {
+		logf("envfiles config loaded from %s (%d service(s))", *envFilesPath, len(envFiles))
+	}
+
 	// ── Mount ─────────────────────────────────────────────────────────────────
 
 	if err := os.MkdirAll(*mountpoint, 0755); err != nil {
@@ -84,9 +98,10 @@ func main() {
 	}
 
 	root := &vaultfs.VaultRoot{
-		DataDir: *dataDir,
-		Seed:    seed,
-		ACL:     acl,
+		DataDir:  *dataDir,
+		Seed:     seed,
+		ACL:      acl,
+		EnvFiles: envFiles,
 	}
 
 	server, err := fs.Mount(*mountpoint, root, &fs.Options{
