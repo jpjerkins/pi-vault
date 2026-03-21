@@ -8,8 +8,8 @@
 #     Write access by any user-mode process is a structural vulnerability.
 #   - The daemon reads this file once at startup. ACL changes require:
 #       sudo systemctl restart vault-t2-fuse
-#   - Use UIDs from the reserved vault range: 65000–65099.
-#     Assign one UID per service in docker-compose.yml: user: "65001:65001"
+#   - Use UIDs from the reserved vault range: 50000–50099.
+#     Assign one UID per service in docker-compose.yml: user: "50001:50001"
 #   - A secret not listed here is unreadable by everyone (deny by default).
 #
 # Format: secret_name: [uid, uid, ...]
@@ -18,11 +18,11 @@
 # Example (replace with your actual secrets and UIDs):
 
 db_password:
-  - 65001   # postgres
+  - 50001   # postgres
 
 api_key_openai:
-  - 65002   # myapp
+  - 50002   # myapp
 
 smtp_password:
-  - 65002   # myapp
-  - 65003   # notification-worker (shared secret example)
+  - 50002   # myapp
+  - 50003   # notification-worker (shared secret example)

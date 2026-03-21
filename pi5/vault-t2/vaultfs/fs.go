@@ -42,10 +42,10 @@ type ACL struct {
 // Expected YAML format:
 //
 //	db_password:
-//	  - 65001
+//	  - 50001
 //	api_key_openai:
-//	  - 65002
-//	  - 65003   # shared secret example
+//	  - 50002
+//	  - 50003   # shared secret example
 func LoadACL(path string) (ACL, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -100,7 +100,7 @@ type EnvFiles map[string]EnvFileEntry
 // Expected YAML format:
 //
 //	nextcloud:
-//	  uid: 65001
+//	  uid: 50001
 //	  env:
 //	    NEXTCLOUD_ADMIN_PASSWORD: nextcloud_admin_password
 //	    NEXTCLOUD_DB_PASSWORD: db_password_nextcloud

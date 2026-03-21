@@ -10,7 +10,7 @@ import (
 
 func TestEmptyACLDeniesAll(t *testing.T) {
 	acl := EmptyACL()
-	if acl.Allowed("any_secret", 65001) {
+	if acl.Allowed("any_secret", 50001) {
 		t.Error("EmptyACL should deny all access")
 	}
 }
@@ -18,10 +18,10 @@ func TestEmptyACLDeniesAll(t *testing.T) {
 func TestLoadACLAllowedAndDenied(t *testing.T) {
 	content := `
 db_password:
-  - 65001
-  - 65002
+  - 50001
+  - 50002
 api_key:
-  - 65003
+  - 50003
 `
 	path := writeTempFile(t, content)
 	acl, err := LoadACL(path)
@@ -34,12 +34,12 @@ api_key:
 		uid    uint32
 		want   bool
 	}{
-		{"db_password", 65001, true},
-		{"db_password", 65002, true},
-		{"db_password", 65003, false},
-		{"api_key", 65003, true},
-		{"api_key", 65001, false},
-		{"nonexistent", 65001, false},
+		{"db_password", 50001, true},
+		{"db_password", 50002, true},
+		{"db_password", 50003, false},
+		{"api_key", 50003, true},
+		{"api_key", 50001, false},
+		{"nonexistent", 50001, false},
 	}
 	for _, c := range cases {
 		got := acl.Allowed(c.secret, c.uid)
@@ -55,7 +55,7 @@ func TestLoadACLEmptyFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadACL on empty map: %v", err)
 	}
-	if acl.Allowed("anything", 65001) {
+	if acl.Allowed("anything", 50001) {
 		t.Error("ACL loaded from {} should deny all access")
 	}
 }
@@ -87,12 +87,12 @@ func TestEmptyEnvFilesHasNoEntries(t *testing.T) {
 func TestLoadEnvFilesParsesCorrectly(t *testing.T) {
 	content := `
 nextcloud:
-  uid: 65001
+  uid: 50001
   env:
     NEXTCLOUD_ADMIN_PASSWORD: nextcloud_admin_password
     NEXTCLOUD_DB_PASSWORD: db_password_nextcloud
 myapp:
-  uid: 65002
+  uid: 50002
   env:
     DATABASE_URL: db_password_myapp
 `
@@ -110,8 +110,8 @@ myapp:
 	if !ok {
 		t.Fatal("missing 'nextcloud' entry")
 	}
-	if nc.UID != 65001 {
-		t.Errorf("nextcloud UID: got %d, want 65001", nc.UID)
+	if nc.UID != 50001 {
+		t.Errorf("nextcloud UID: got %d, want 50001", nc.UID)
 	}
 	if nc.Env["NEXTCLOUD_ADMIN_PASSWORD"] != "nextcloud_admin_password" {
 		t.Errorf("nextcloud env mapping wrong: %v", nc.Env)
@@ -124,8 +124,8 @@ myapp:
 	if !ok {
 		t.Fatal("missing 'myapp' entry")
 	}
-	if app.UID != 65002 {
-		t.Errorf("myapp UID: got %d, want 65002", app.UID)
+	if app.UID != 50002 {
+		t.Errorf("myapp UID: got %d, want 50002", app.UID)
 	}
 	if app.Env["DATABASE_URL"] != "db_password_myapp" {
 		t.Errorf("myapp env mapping wrong: %v", app.Env)
